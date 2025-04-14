@@ -1,0 +1,321 @@
+﻿@page "/importa"
+
+
+@inject IWebHostEnvironment env
+@inject IJSRuntime js
+@inject PreloadService preload
+@inject NavigationManager NavigationManager
+@inject IWebHostEnvironment webHostEnvironment
+
+<div class="@AlertClass" role="alert">
+    @AlertMessage
+</div>
+
+<div class="row">
+    <div class="col-6">
+        <form  class="needs-validation" novalidate>
+            <div class="input-group mb-3">
+                <InputFile @key=@(inputFileId) class="form-control" id="inputFile" OnChange="OnInputFileChange" aria-describedby="uploadButton" required />
+                <button class="btn btn-primary" type="submit" id="uploadButton" disabled="@IsUploadDisabled">
+                    <span class="oi oi-cloud-upload" aria-hidden="true"></span> Upload do arquivo selecionado
+                </button>
+            </div>
+            <div class="invalid-feedback">
+                Porfavor selecione um arquivo.cvs
+            </div>
+        </form>
+    </div>
+</div>
+<div class="row">
+    <div class="col-2">
+        <span>@CountRegistro.ToString()</span>
+    </div>
+    <div class="col-2">
+        <button type="button" class="btn btn-primary" @onclick="PreencheDataTable">FillDataSet</button>
+    </div>
+    <div class="col-2">
+        @if (tabela != null)
+        {
+            <span>Registros carregados no DataSet: @tabela.Rows.Count</span>
+        }
+    </div>
+</div>
+
+
+
+@code
+{
+    private async Task ShowSpinnerAsync()
+    {
+        preloadService.Show(SpinnerColor.Dark, "Carregando...");
+    }
+
+    private async Task HideSpinnerAsync()
+    {
+        preloadService.Hide();
+    }
+
+
+
+
+    [Inject]
+    protected PreloadService preloadService { get; set; } = default!;
+
+    [Parameter]
+    public Dictionary<int, string> ColunsTable { get; set; } = new Dictionary<int, string>();
+
+    [Parameter]
+    public List<string> valoreDaPesquisa { get; set; } = new List<string>();
+
+    [Parameter]
+    public int IndexSelecionado { get; set; } = 0;
+
+    List<string> ListMatriculas = null;
+    private double TotalImportado = 0;
+    private record Valore(string valor);
+    public int CountRegistro { get; set; } = 0;
+    private List<string[]> csv = new List<string[]>();
+    private List<List<string>> csvCache = new List<List<string>>();
+    MarkupString AlertMessage = new MarkupString("<strong>No file selected</strong>");
+    string AlertClass = "alert alert-info";
+    int ProgressPercentage = 0;
+    IBrowserFile selectedFile;
+    long maxFileSize = 1024L * 1024L * 1024L * 2L;
+    string[] allowedExtensions = { ".csv" };
+    bool IsUploadDisabled = true;
+    private Guid inputFileId = Guid.NewGuid();
+
+
+
+    private async Task OnInputFileChange(InputFileChangeEventArgs e)
+    {
+        ShowSpinnerAsync();
+
+        csv = new List<string[]>();
+        csvCache = new List<List<string>>();
+        selectedFile = e.GetMultipleFiles()[0];
+        ProgressPercentage = 0;
+        IsUploadDisabled = true;
+
+        if (selectedFile.Size > maxFileSize)
+        {
+            SetAlert("alert alert-danger", "oi oi-ban", $"Arquivo excede o limite. Tamanho máximo permitido é: <strong>{maxFileSize / (1024 * 1024)} MB</strong>.");
+            return;
+        }
+
+        if (!allowedExtensions.Contains(Path.GetExtension(selectedFile.Name).ToLowerInvariant()))
+        {
+            SetAlert("alert alert-danger", "oi oi-warning", $"Tipo invalido. Tipo de arquivos permitido <strong>{string.Join(", ", allowedExtensions)}</strong>.");
+            return;
+        }
+
+        SetAlert("alert alert-info", "oi oi-info", $"<strong>{selectedFile.Name}</strong> ({selectedFile.Size} bytes) arquivo selecionado.");
+        IsUploadDisabled = false;
+        var singleFile = e.File;
+
+        Regex regex = new Regex(".+\\.csv", RegexOptions.Compiled);
+        if (!regex.IsMatch(singleFile.Name))
+        {
+            //show error invalidad format file
+        }
+        else
+        {
+            //int bufferSize = 1024 * 1024;
+            //byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(bufferSize);
+            //await singleFile.OpenReadStream().ReadAsync(buffer);
+
+            long maxFileSize = 1024L * 1024L * 1024L * 2L;
+            var stream = singleFile.OpenReadStream(maxFileSize);
+
+            MemoryStream ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            stream.Close();
+            var outputFileString = System.Text.Encoding.UTF8.GetString(ms.ToArray());
+
+            foreach (var item in outputFileString.Split(Environment.NewLine))
+            {
+                var valor = await SplitCSV(item.ToString());
+                csvCache.Add(valor);
+            }
+            CountRegistro = csvCache.Count;
+            await js.InvokeVoidAsync("console.log", $"Registro na planilha: {CountRegistro}");
+            await MakeColumns();
+            await UploadPlanilhaServer();
+
+            HideSpinnerAsync();
+        }
+    }
+
+    private async Task MakeColumns()
+    {
+        await js.InvokeVoidAsync("console.log", "Identificacao das colundas da Matrix/Tabela");
+        ColunsTable = new Dictionary<int, string>();
+        if (csvCache.Count <= 0)
+        {
+            return;
+        }
+        for (int i = 0; i < csvCache[0].Count; i++)
+        {
+            ColunsTable.Add(i, csvCache[0].ElementAt<string>(i));
+            await js.InvokeVoidAsync("console.log", $"Colunda: {i} - {csvCache[0].ElementAt<string>(i)}");
+        }
+    }
+
+    string? caminhoArquivo;
+
+    private async Task UploadPlanilhaServer()
+    {
+        if (selectedFile != null)
+        {
+            IsUploadDisabled = true;
+            Stream stream = selectedFile.OpenReadStream(maxFileSize);
+            var path = $"{env.WebRootPath}\\{selectedFile.Name}";
+            caminhoArquivo = path;
+            using FileStream fs = File.Create(path);
+
+            // Set buffer size to 512 KB.
+            int bufferSize = 512 * 1024;
+            byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(bufferSize);
+            int bytesRead;
+            long totalBytesRead = 0;
+            long fileSize = selectedFile.Size;
+
+            // Use a timer to update the UI every few hundred milliseconds.
+            using var timer = new Timer(_ => InvokeAsync(() => StateHasChanged()));
+            timer.Change(TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(500));
+
+            try
+            {
+                while ((bytesRead = await stream.ReadAsync(buffer)) != 0)
+                {
+                    totalBytesRead += bytesRead;
+                    ProgressPercentage = (int)(100 * totalBytesRead / fileSize);
+                    await fs.WriteAsync(buffer, 0, bytesRead);
+                }
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+            }
+
+            // Stop the timer and update the UI with the final progress.
+            timer.Change(Timeout.Infinite, Timeout.Infinite);
+            ProgressPercentage = 100;
+            SetAlert("alert alert-success", "oi oi-check", $"<strong>{selectedFile.Name}</strong> ({selectedFile.Size} bytes) arquivo enviado para o servidor.");
+            inputFileId = Guid.NewGuid();
+            this.StateHasChanged();
+        }
+    }
+
+    private DataTable tabela = null;
+    private bool carregando = false;
+
+    private async Task PreencheDataTable()
+    {
+        // preload.Show();
+        // await Task.Delay(5000);
+        tabela = new DataTable();
+        string caminho = Path.Combine(webHostEnvironment.WebRootPath, selectedFile.Name);
+        tabela = await ConvertCSVtoDataTable(caminho);
+        // preload.Hide();
+    }
+
+    public async Task<DataTable> ConvertCSVtoDataTable(string strFilePath)
+    {
+        DataTable dt = new DataTable();
+        try
+        {
+            using (StreamReader sr = new StreamReader(strFilePath))
+            {
+                string[] headers = sr.ReadLine().Split(';');
+                foreach (string header in headers)
+                {
+                    dt.Columns.Add(header);
+                }
+                while (!sr.EndOfStream)
+                {
+                    string[] rows = sr.ReadLine().Split(';');
+                    DataRow dr = dt.NewRow();
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        try
+                        {
+                            dr[i] = rows[i];
+                        }
+                        catch (Exception)
+                        {
+                        }
+                    }
+                    dt.Rows.Add(dr);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            throw ex;
+        }
+        return dt;
+    }
+
+
+
+
+
+    private async Task<List<string>> SplitCSV(string input)
+    {
+        //Excludes commas within quotes
+        //Regex csvSplit = new Regex("(?:^|,)(\"(?:[^\"]+|\"\")*\"|[^,]*)", RegexOptions.Compiled);
+        Regex csvSplit = new Regex("(?:^|;)(\"(?:[^\"]+|\"\")*\"|[^,]*)", RegexOptions.Compiled);
+        List<string> list = new List<string>();
+        string curr = null;
+        foreach (Match match in csvSplit.Matches(input))
+        {
+            curr = match.Value;
+            if (0 == curr.Length)
+            {
+                list.Add("");
+            }
+            list.Add(curr.TrimStart(';'));
+        }
+
+        string[] linha2 = list[0].Split(";");
+        List<string> newList = new List<string>();
+        for (int i = 0; i < linha2.Length; i++)
+        {
+            newList.Add(linha2[i]);
+        }
+        return newList;
+    }
+ 
+
+    private void SetAlert(string alertClass, string iconClass, string message)
+    {
+        AlertClass = alertClass;
+        AlertMessage = new MarkupString($"<span class='{iconClass}' aria-hidden='true'></span> {message}");
+    }
+
+    private void TesteCabecalho()
+    {
+        if (csvCache.Count <= 0)
+        {
+            return;
+        }
+        var linha = csv[0];
+        js.InvokeVoidAsync("console.log", linha);
+        foreach (var item in linha)
+        {
+            ColunsTable.Add(item[0], item);
+            js.InvokeVoidAsync("console.log", item);
+        }
+    }
+
+    private void OnSelected(ChangeEventArgs e)
+    {
+        IndexSelecionado = Convert.ToInt32(e.Value);
+        js.InvokeVoidAsync("console.log", IndexSelecionado);
+    }
+
+
+
+
+}
