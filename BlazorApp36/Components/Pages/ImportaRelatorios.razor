@@ -7,8 +7,19 @@
 @inject NavigationManager NavigationManager
 @inject IWebHostEnvironment webHostEnvironment
 
+
 <div class="@AlertClass" role="alert">
     @AlertMessage
+</div>
+
+<div class="col-md-5 mb-3">
+    <label for="curso" class="form-label">Curso</label>
+    <select class="form-select" id="curso" @bind="RelatorioSelecionado">
+        <option value="">Selecione...</option>
+        <option value="BaseAlunos">Base de Alunos</option>
+        <option value="InadimplentesAlunos">Base de Inadimplentes</option>
+        <option value="RepasseAlunos">Repasse Alunos</option>
+    </select>
 </div>
 
 <div class="row">
@@ -37,6 +48,7 @@
         @if (tabela != null)
         {
             <span>Registros carregados no DataSet: @tabela.Rows.Count</span>
+            <span>Registros carregados da Lista: @RelatorioSelecionado</span>
         }
     </div>
 </div>
@@ -56,8 +68,6 @@
     }
 
 
-
-
     [Inject]
     protected PreloadService preloadService { get; set; } = default!;
 
@@ -69,6 +79,8 @@
 
     [Parameter]
     public int IndexSelecionado { get; set; } = 0;
+
+    private string RelatorioSelecionado { get; set; } = "";
 
     List<string> ListMatriculas = null;
     private double TotalImportado = 0;
@@ -84,6 +96,10 @@
     string[] allowedExtensions = { ".csv" };
     bool IsUploadDisabled = true;
     private Guid inputFileId = Guid.NewGuid();
+
+    public List<BaseAlunos> AlunosMatriculados { get; set; } = default!;
+    public List<InadimplentesAlunos> InadimplentesAlunos { get; set; } = default!;
+    public List<RepasseAlunos> RepasseAlunos { get; set; } = default!;
 
 
 
@@ -212,12 +228,26 @@
 
     private async Task PreencheDataTable()
     {
-        // preload.Show();
-        // await Task.Delay(5000);
         tabela = new DataTable();
         string caminho = Path.Combine(webHostEnvironment.WebRootPath, selectedFile.Name);
         tabela = await ConvertCSVtoDataTable(caminho);
-        // preload.Hide();
+        if (RelatorioSelecionado.Equals("BaseAlunos"))
+        {
+            await PreencheListBaseAlunos();
+        }
+        if (RelatorioSelecionado.Equals("InadimplentesAlunos"))
+        {
+            await PreencheListInadimplentesAlunos();
+        }
+        if (RelatorioSelecionado.Equals("RepasseAlunos"))
+        {
+            await PreencheListRepasseAlunos();
+        }
+        else
+        {
+            return;
+        }
+        
     }
 
     public async Task<DataTable> ConvertCSVtoDataTable(string strFilePath)
@@ -258,6 +288,74 @@
     }
 
 
+    private async Task PreencheListBaseAlunos()
+    {
+        AlunosMatriculados = new List<BaseAlunos>();
+        foreach (DataRow item in tabela.Rows)
+        {
+            BaseAlunos aluno = new() {  
+                DataInsert = DateTime.Today,
+                Matricula = item[2].ToString(),
+                CPF = item[3].ToString(),
+                Nome = item[4].ToString(),
+                Curso = item[5].ToString(),
+                Oferta = item[7].ToString(),
+                Modalidade = item[8].ToString(),
+                Celular =item[12].ToString(),
+                Devedor =item[13].ToString(),
+                Situacao = item[14].ToString(),
+                DataMatricula = item[16].ToString()
+            };
+            AlunosMatriculados.Add(aluno);
+        }
+    }
+
+    private async Task PreencheListInadimplentesAlunos()
+    {
+        InadimplentesAlunos = new List<InadimplentesAlunos>();
+        foreach (DataRow item in tabela.Rows)
+        {
+            InadimplentesAlunos aluno = new()
+                {
+                    DataInsert = DateTime.Today,
+                    Matricula = item[2].ToString(),
+                    CPF = item[3].ToString(),
+                    Nome = item[4].ToString(),
+                    Curso = item[5].ToString(),
+                    Oferta = item[7].ToString(),
+                    Modalidade = item[8].ToString(),
+                    Celular = item[23].ToString(),
+                    ValorDebitoMensalidades = item[13].ToString(),
+                    ValorTotalDebitos = item[12].ToString(),
+                    EscritorioCobranca = item[25].ToString()
+                };
+            InadimplentesAlunos.Add(aluno);
+        }
+    }
+
+    private async Task PreencheListRepasseAlunos()
+    {
+        RepasseAlunos = new List<RepasseAlunos>();
+        foreach (DataRow item in tabela.Rows)
+        {
+            RepasseAlunos aluno = new()
+                {
+                    DataInsert = DateTime.Today,
+                    CodAluno = item[10].ToString(),
+                    Nome = item[11].ToString(),
+                    TipoAluno = item[12].ToString(),
+                    TipoCurso = item[13].ToString(),
+                    Curso = item[14].ToString(),
+                    Semestre = item[15].ToString(),
+                    Modalidade = item[16].ToString(),
+                    ValorRecebido = item[19].ToString(),
+                    ValorRepassePolo = item[21].ToString(),
+                    DescricãoDisciplina = item[28].ToString()
+
+                };
+            RepasseAlunos.Add(aluno);
+        }
+    }
 
 
 
