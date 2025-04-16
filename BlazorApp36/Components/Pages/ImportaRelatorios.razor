@@ -48,7 +48,7 @@
         @if (tabela != null)
         {
             <span>Registros carregados no DataSet: @tabela.Rows.Count</span>
-            <span>Registros carregados da Lista: @RelatorioSelecionado</span>
+            <span>Registros carregados da Lista:  @($"{RelatorioSelecionado}-{AlunosMatriculados.Count}{InadimplentesAlunos.Count}{RepasseAlunos.Count}")</span>
         }
     </div>
 </div>
@@ -97,9 +97,9 @@
     bool IsUploadDisabled = true;
     private Guid inputFileId = Guid.NewGuid();
 
-    public List<BaseAlunos> AlunosMatriculados { get; set; } = default!;
-    public List<InadimplentesAlunos> InadimplentesAlunos { get; set; } = default!;
-    public List<RepasseAlunos> RepasseAlunos { get; set; } = default!;
+    public List<BaseAlunos> AlunosMatriculados { get; set; } = new ()!;
+    public List<InadimplentesAlunos> InadimplentesAlunos { get; set; } = new()!;
+    public List<RepasseAlunos> RepasseAlunos { get; set; } = new()!;
 
 
 
@@ -155,7 +155,7 @@
             }
             CountRegistro = csvCache.Count;
             await js.InvokeVoidAsync("console.log", $"Registro na planilha: {CountRegistro}");
-            await MakeColumns();
+            // await MakeColumns();
             await UploadPlanilhaServer();
 
             HideSpinnerAsync();
@@ -173,7 +173,7 @@
         for (int i = 0; i < csvCache[0].Count; i++)
         {
             ColunsTable.Add(i, csvCache[0].ElementAt<string>(i));
-            await js.InvokeVoidAsync("console.log", $"Colunda: {i} - {csvCache[0].ElementAt<string>(i)}");
+            await js.InvokeVoidAsync("console.log", $"Coluna: {i} - {csvCache[0].ElementAt<string>(i)}");
         }
     }
 
